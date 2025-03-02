@@ -7,6 +7,7 @@ from common import *
 from ModManager import *
 from DatabaseManager import *
 from qt_classes.TerminalOutputWidget import TerminalOutputWidget
+import subprocess
 
 TITLE_FONT = QtGui.QFont('Consolas', 25)
 BODY_FONT = QtGui.QFont('Consolas', 15)
@@ -33,6 +34,19 @@ def create_list_element(row):
                         background-color: transparent;
     }
     """)
+
+    mod_type = row["type"]
+    label2 = QLabel(mod_type)
+    label2.setFont(BODY_FONT)
+    label2.setStyleSheet("""
+    QLabel {
+        padding: 10px;
+                        margin-left: 5px;
+                        background-color: transparent;
+        margin-right: 10px;
+    }
+    """)
+
     checkbox = QCheckBox()
     checkbox.setStyleSheet("""
     QCheckBox {
@@ -49,6 +63,7 @@ def create_list_element(row):
     checkbox_list.append(checkbox)
     hbox.addWidget(label)
     hbox.addStretch()
+    hbox.addWidget(label2)
     hbox.addWidget(checkbox)
     return hbox
 
@@ -59,12 +74,14 @@ def create_line(height=2):
     line.setStyleSheet("background-color: grey;")
     return line
 
+
 def create_text_input(placeholder):
     input_field = QLineEdit()
     input_field.setFont(BODY_FONT)
     input_field.setPlaceholderText(placeholder)
     input_field.setMinimumWidth(WIDTH//2)
     return input_field
+
 
 def on_checkbox_state_changed(state, mod_name):
     if state == 2:  # 2 means checked, 0 means unchecked
@@ -109,6 +126,10 @@ def show_popup():
 
 def on_confirm_clicked(cancel_button: QPushButton):
     global change_map, delete
+
+    if not change_map["enable"] and not change_map["disable"]:
+        sys.exit(0)
+
     mods_to_be_enabled = change_map["enable"]
     mods_to_be_disabled = change_map["disable"]
 
@@ -136,6 +157,7 @@ def on_confirm_clicked(cancel_button: QPushButton):
         print(f"\033[32m Mods {mods_to_be_disabled} uninstalled!\033[0m")
     change_map = reset_map()
     cancel_button.setDisabled(False)
+    refresh_mod_list()
 
 
 def on_yes_clicked():
@@ -152,10 +174,13 @@ def on_cancel_clicked():
     sys.exit(0)
 
 
-def create_button(text):
+def create_button(text, fixed_width=True):
     button = QPushButton(text)
     button.setFont(BUTTON_FONT)
-    button.setFixedWidth(WIDTH//16)
+    if fixed_width:
+        button.setFixedWidth(WIDTH//16)
+    else:
+        button.adjustSize()
     button.setStyleSheet("""
     QPushButton {
             padding: 10px;
@@ -172,9 +197,26 @@ def reset_map():
         "disable": []    # Keeps a list of mod_named to be disabled
     }
 
+
 def show_settings_popup():
-        dialog = SettingsDialog()
-        dialog.exec()
+    dialog = SettingsDialog()
+    dialog.exec()
+
+
+def refresh_mod_list():
+    global scroll_list
+    MOD_FOLDER, _, _, _, _ = get_paths()
+    init_mods(MOD_FOLDER)
+    print("Refreshing mods list...")
+    scroll_list.update_list()
+    print("Mods list refreshed!")
+
+
+def start_game():
+    _, _, _, _, GAME_PATH = get_paths()
+    subprocess.run(["powershell", "Start-Process",
+                   GAME_PATH, "-Verb", "RunAs"])
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -189,32 +231,42 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout()
 
         # Add text inputs with labels
-        MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP = get_paths()
+        MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP, GAME_PATH = get_paths()
         self.mod_folder_input = create_text_input(MOD_FOLDER)
         self.media_folder_input = create_text_input(MEDIA_FOLDER)
         self.mesh_zip_input = create_text_input(MESH_ZIP)
         self.texture_zip_input = create_text_input(TEXTURE_ZIP)
+        self.game_path_input = create_text_input(GAME_PATH)
 
         mod_hbox = QHBoxLayout()
         mod_hbox.addWidget(create_label("Mod Folder:", BODY_FONT))
         mod_hbox.addStretch()
         mod_hbox.addWidget(self.mod_folder_input)
         layout.addLayout(mod_hbox)
+
         media_hbox = QHBoxLayout()
         media_hbox.addWidget(create_label("Media Folder:", BODY_FONT))
         media_hbox.addStretch()
         media_hbox.addWidget(self.media_folder_input)
         layout.addLayout(media_hbox)
+
         mesh_hbox = QHBoxLayout()
         mesh_hbox.addWidget(create_label("Mesh ZIP:", BODY_FONT))
         mesh_hbox.addStretch()
         mesh_hbox.addWidget(self.mesh_zip_input)
         layout.addLayout(mesh_hbox)
+
         texture_hbox = QHBoxLayout()
         texture_hbox.addWidget(create_label("Texture ZIP:", BODY_FONT))
         texture_hbox.addStretch()
         texture_hbox.addWidget(self.texture_zip_input)
         layout.addLayout(texture_hbox)
+
+        game_hbox = QHBoxLayout()
+        game_hbox.addWidget(create_label("Game EXE:", BODY_FONT))
+        game_hbox.addStretch()
+        game_hbox.addWidget(self.game_path_input)
+        layout.addLayout(game_hbox)
 
         # Add Confirm and Cancel buttons
         hbox = QHBoxLayout()
@@ -286,9 +338,44 @@ class ScrollableWindow(QWidget):
         main_layout.addWidget(scroll_area)
         self.setLayout(main_layout)
 
+    def update_list(self):
+        df = pd.read_csv(MODS_TABLE)
+
+        # Find the scroll area's content widget
+        scroll_area = self.findChild(QScrollArea)
+        if not scroll_area:
+            return
+
+        content_widget = scroll_area.widget()
+        if not content_widget:
+            return
+
+        content_layout = content_widget.layout()
+
+        # Clear the existing layout
+        while content_layout.count():
+            item = content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    sub_item = item.layout().takeAt(0)
+                    if sub_item.widget():
+                        sub_item.widget().deleteLater()
+
+        # Rebuild the content with updated data
+        for index, row in df.iterrows():
+            content = create_list_element(row)
+            content_layout.addLayout(content)
+            line = create_line()
+            content_layout.addWidget(line)
+
+        content_layout.addStretch()
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
+        global scroll_list
         super().__init__()
 
         # Set up the main window
@@ -315,7 +402,7 @@ class MainWindow(QMainWindow):
         """)
         header_hbox.addWidget(header_label)
         header_hbox.addStretch()
-        add_all = QCheckBox("Add all")
+        add_all = QCheckBox("Enable all")
         add_all.setFont(BUTTON_FONT)
         add_all.setStyleSheet("""
         QCheckBox {
@@ -339,13 +426,20 @@ class MainWindow(QMainWindow):
         # Create a horizontal layout for the buttons
         button_layout = QHBoxLayout()
         settings_button = create_button("Settings")
+        refresh_button = create_button("Refresh")
+        game_button = create_button("Start Game", False)
         confirm_button = create_button("Confirm")
         cancel_button = create_button("Cancel")
         confirm_button.clicked.connect(
             lambda param="cancel_button": on_confirm_clicked(cancel_button))
         cancel_button.clicked.connect(on_cancel_clicked)
+        refresh_button.clicked.connect(refresh_mod_list)
+        game_button.clicked.connect(start_game)
         settings_button.clicked.connect(show_settings_popup)
         button_layout.addWidget(settings_button)
+        button_layout.addWidget(refresh_button)
+        button_layout.addStretch()
+        button_layout.addWidget(game_button)
         button_layout.addStretch()
         button_layout.addWidget(confirm_button)
         button_layout.addWidget(cancel_button)

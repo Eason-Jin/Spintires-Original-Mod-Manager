@@ -19,13 +19,13 @@ def save_path_table(table):
 def get_paths():
     path_table = pd.read_csv(PATH_TABLE)
     path_list = path_table["path"].to_list()
-    if len(path_list) != 4:
+    if len(path_list) != 5:
         assert ValueError(
-            "Path table does not have 4 paths! (mod_folder, media_folder, mesh_zip, texture_zip)")
-    return path_list[0], path_list[1], path_list[2], path_list[3]
+            "Path table does not have 5 paths! (mod_folder, media_folder, mesh_zip, texture_zip, game)")
+    return path_list[0], path_list[1], path_list[2], path_list[3], path_list[4]
 
 
-def update_paths(mod_folder=None, media_folder=None, mesh_zip=None, texture_zip=None):
+def update_paths(mod_folder=None, media_folder=None, mesh_zip=None, texture_zip=None, game_path=None):
     path_table = pd.read_csv(PATH_TABLE)
     if mod_folder is not None and mod_folder:
         path_table.loc[path_table["var_name"] ==
@@ -39,12 +39,15 @@ def update_paths(mod_folder=None, media_folder=None, mesh_zip=None, texture_zip=
     if texture_zip is not None and texture_zip:
         path_table.loc[path_table["var_name"] ==
                        "texture_zip", "path"] = texture_zip
+    if game_path is not None and game_path:
+        path_table.loc[path_table["var_name"] ==
+                       "game", "path"] = game_path
     save_path_table(path_table)
 
 
 def init_database():
     # Table: MODS
-    # Columns: mod_name:str, enabled:bool
+    # Columns: mod_name:str, type:str, enabled:bool
 
     # Table: ENABLED_MODS
     # Columns: mod_name:str, media_files:list[str], mesh_files:list[str], texture_files:list[str]
@@ -54,7 +57,7 @@ def init_database():
     # var_names: mod_folder, media_folder, mesh_zip, texture_zip
 
     if not os.path.isfile(MODS_TABLE):
-        mods_table = pd.DataFrame(columns=["mod_name", "enabled"])
+        mods_table = pd.DataFrame(columns=["mod_name", "type", "enabled"])
         save_mods_table(mods_table)
 
     if not os.path.isfile(ENABLED_TABLE):
@@ -64,23 +67,29 @@ def init_database():
 
     if not os.path.isfile(PATH_TABLE):
         data = {
-            "var_name": ["mod_folder", "media_folder", "mesh_zip", "texture_zip"],
-            "path": ["mod" if TEST else "C:\Games\Spintires Original\mod", "Media" if TEST else "C:\Games\Spintires Original\Media", "MeshCache.zip" if TEST else "C:\Games\Spintires Original\MeshCache.zip", "TextureCache.zip" if TEST else "C:\Games\Spintires Original\TextureCache.zip"]
+            "var_name": ["mod_folder", "media_folder", "mesh_zip", "texture_zip", "game"],
+            "path": ["mod" if TEST else "C:\Games\Spintires_Original\mod", "Media" if TEST else "C:\Games\Spintires_Original\Media", "MeshCache.zip" if TEST else "C:\Games\Spintires_Original\MeshCache.zip", "TextureCache.zip" if TEST else "C:\Games\Spintires_Original\TextureCache.zip", "C:\Games\Spintires_Original\SpinTires.exe"]
         }
         path_table = pd.DataFrame(data=data)
         save_path_table(path_table)
 
-    MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP = get_paths()
+    MOD_FOLDER, _, _, _, _ = get_paths()
     init_mods(MOD_FOLDER)
 
 
 def init_mods(mod_folder):
+    MOD_FOLDER, _, _, _, _ = get_paths()
     mods_table = pd.read_csv(MODS_TABLE)
     mods, _ = read_folder(mod_folder)
     mods_table = mods_table[mods_table["mod_name"].isin(mods)]
     for mod in mods:
         if mod not in mods_table["mod_name"].values:
-            new_row = {"mod_name": mod, "enabled": False}
+            folders, _ = read_folder(os.path.join(MOD_FOLDER, mod, "media"))
+            if "levels" in folders:
+                mod_type = "map"
+            else:
+                mod_type = "vehicle"
+            new_row = {"mod_name": mod, "type": mod_type, "enabled": False}
             mods_table.loc[len(mods_table)] = new_row
     save_mods_table(mods_table)
 

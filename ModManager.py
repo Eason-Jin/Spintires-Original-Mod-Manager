@@ -65,30 +65,36 @@ def copy_folder(source_dir: str, target_dir: str) -> List[str]:
 
 
 def install_mod(mod_name):
-    MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP = get_paths()
+    MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP, _ = get_paths()
     print(f"Mod name: {mod_name}")
     media_path = os.path.join(MOD_FOLDER, mod_name, "media")
     try:
         subfolders, _ = read_folder(media_path)
     except FileNotFoundError:
         print(f"No media folder found in {mod_name}")
-
-    media_folders = ["billboards", "classes",
-                     "meshes", "sounds", "textures"]
-    mesh_folders = ["MeshCache"]
-    texture_folders = ["TextureCache"]
-
+    mod_table = pd.read_csv(MODS_TABLE)
+    mod_info = mod_table[mod_table["mod_name"] == mod_name]
+    mod_type = mod_info["type"]
     files_copied = {
         "media": [],
         "mesh": [],
         "texture": []
     }
+    if (mod_type == "vehicle").bool():
+        media_folders = ["billboards", "classes",
+                         "meshes", "sounds", "textures"]
 
-    media_cpoies = []
+    elif (mod_type == "map").bool():
+        media_folders = ["levels", "classes", "meshes", "textures"]
+
+    mesh_folders = ["MeshCache"]
+    texture_folders = ["TextureCache"]
+
+    media_copies = []
     for subfolder in subfolders:
         folder_path = os.path.join(media_path, subfolder)
         if subfolder in media_folders:
-            media_cpoies.extend(copy_folder(
+            media_copies.extend(copy_folder(
                 folder_path, os.path.join(MEDIA_FOLDER, subfolder)))
         elif subfolder in mesh_folders:
             _, files = read_folder(folder_path)
@@ -96,12 +102,13 @@ def install_mod(mod_name):
         elif subfolder in texture_folders:
             _, files = read_folder(folder_path)
             files_copied["texture"] = add_to_zip(files, TEXTURE_ZIP)
-    files_copied["media"] = media_cpoies
+
+    files_copied["media"] = media_copies
     enable_mod(mod_name, files_copied)
 
 
 def uninstall_mod(mod_name, delete):
-    MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP = get_paths()
+    MOD_FOLDER, _, MESH_ZIP, TEXTURE_ZIP, _ = get_paths()
     mod_entry = disable_mod(mod_name)
     if not mod_entry.empty:
         media_files = json.loads(mod_entry["media_files"].values[0])
@@ -113,10 +120,12 @@ def uninstall_mod(mod_name, delete):
                 if os.path.exists(file):
                     os.remove(file)
                 bar()
-        print(f"Removing mesh files for {mod_name}")
-        remove_from_zip(mesh_files, MESH_ZIP)
-        print(f"Removing texture files for {mod_name}")
-        remove_from_zip(texture_files, TEXTURE_ZIP)
+        if len(mesh_files) > 0:
+            print(f"Removing mesh files for {mod_name}")
+            remove_from_zip(mesh_files, MESH_ZIP)
+        if len(texture_files) > 0:
+            print(f"Removing texture files for {mod_name}")
+            remove_from_zip(texture_files, TEXTURE_ZIP)
 
         if delete:
             shutil.rmtree(os.path.join(MOD_FOLDER, mod_name))
@@ -125,7 +134,7 @@ def uninstall_mod(mod_name, delete):
 
 
 def reset():
-    MOD_FOLDER, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP = get_paths()
+    _, MEDIA_FOLDER, MESH_ZIP, TEXTURE_ZIP, _ = get_paths()
     if os.path.exists(MEDIA_FOLDER):
         shutil.rmtree(MEDIA_FOLDER)
     os.makedirs(MEDIA_FOLDER)
