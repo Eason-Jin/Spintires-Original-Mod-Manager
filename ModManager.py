@@ -85,7 +85,7 @@ def install_mod(mod_name):
                          "meshes", "sounds", "textures"]
 
     elif (mod_type == "map").bool():
-        media_folders = ["levels", "classes", "meshes", "textures"]
+        media_folders = ["levels", "classes", "meshes", "textures", "strings", "sounds"]
 
     mesh_folders = ["MeshCache"]
     texture_folders = ["TextureCache"]
